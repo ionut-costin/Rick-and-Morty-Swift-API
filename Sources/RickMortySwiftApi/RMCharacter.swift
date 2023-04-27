@@ -100,24 +100,12 @@ public struct RMCharacter {
      - Returns: CharacterFilter
      */
     func createCharacterFilter(name: String?, status: Status?, species: String?, type: String?, gender: Gender?) -> RMCharacterFilter {
-        
-        let parameterDict: [String: String] = [
-            "name" : name ?? "",
-            "status" : status?.rawValue ?? "",
-            "species" : species ?? "",
-            "type" : type ?? "",
-            "gender" : gender?.rawValue ?? ""
-        ]
-        
-        var query = "character/?"
-        for (key, value) in parameterDict {
-            if value != "" {
-                query.append(key+"="+value+"&")
-            }
-        }
-        
-        let filter = RMCharacterFilter(name: parameterDict["name"]!, status: parameterDict["status"]!, species: parameterDict["species"]!, type: parameterDict["type"]!, gender: parameterDict["gender"]!, query: query)
-        return filter
+
+        RMCharacterFilter(name: name ?? "",
+                          status: status ?? .none,
+                          species: species ?? "",
+                          type: type ?? "",
+                          gender: gender ?? .none)
     }
     
     /**
@@ -129,7 +117,21 @@ public struct RMCharacter {
     public func getCharactersByFilter(filter: RMCharacterFilter) async throws -> [RMCharacterModel] {
         let characterData = try await networkHandler.performAPIRequestByMethod(method: filter.query)
         let infoModel: RMCharacterInfoModel = try networkHandler.decodeJSONData(data: characterData)
-        return infoModel.results
+        let characters: [RMCharacterModel] = try await withThrowingTaskGroup(of: [RMCharacterModel].self) { group in
+            for index in 1...infoModel.info.pages {
+                group.addTask {
+                    let characterData = try await networkHandler.performAPIRequestByMethod(method: filter.query + "&page="+String(index))
+                    let infoModel: RMCharacterInfoModel = try networkHandler.decodeJSONData(data: characterData)
+                    return infoModel.results
+                }
+            }
+
+            return try await group.reduce(into: [RMCharacterModel]()) { allCharacters, characters in
+                allCharacters.append(contentsOf: characters)
+            }
+        }
+
+        return characters.sorted { $0.id < $1.id }
     }
 }
 /**
@@ -142,14 +144,14 @@ public struct RMCharacter {
  - **gender**: The species of the character.
  - **query**: URL query for HTTP request.
  */
-public struct RMCharacterFilter {
+public struct RMCharacterFilter: Equatable {
     public var name: String
-    public var status: String
+    public var status: Status
     public var species: String
     public var type: String
-    public var gender: String
+    public var gender: Gender
  
-    public init(name: String = "", status: String = "", species: String = "", type: String = "", gender: String = "") {
+    public init(name: String = "", status: Status = .none, species: String = "", type: String = "", gender: Gender = .none) {
         self.name = name
         self.status = status
         self.species = species
@@ -158,18 +160,23 @@ public struct RMCharacterFilter {
     }
 
     public var query: String {
+        var query = ""
+
         let paramsDict = ["name": name,
-                          "status": status,
+                          "status": status.rawValue,
                           "species": species,
                           "type": type,
-                          "gender": gender]
-     
-         var query = "character/?"
-         paramsDict.forEach { key, value in
-             query.append(key + "=" + value + "&")
-         }
-     
-								 return query
+                          "gender": gender.rawValue]
+            .filter { !$0.value.isEmpty }
+
+        if !paramsDict.isEmpty {
+            query = "character/?"
+            paramsDict.forEach { key, value in
+                query.append(key + "=" + value + "&")
+            }
+        }
+
+        return query
     }
 }
 
@@ -204,7 +211,7 @@ struct RMCharacterInfoModel: Codable {
  - **url**: Link to the character's own URL endpoint.
  - **created**: Time at which the character was created in the database.
  */
-public struct RMCharacterModel: Codable, Identifiable {
+public struct RMCharacterModel: Codable, Identifiable, Hashable {
     public let id: Int
     public let name: String
     public let status: String
@@ -217,6 +224,21 @@ public struct RMCharacterModel: Codable, Identifiable {
     public let episode: [String]
     public let url: String
     public let created: String
+
+    public init(id: Int, name: String, status: String, species: String, type: String, gender: String, origin: RMCharacterOriginModel, location: RMCharacterLocationModel, image: String, episode: [String], url: String, created: String) {
+        self.id = id
+        self.name = name
+        self.status = status
+        self.species = species
+        self.type = type
+        self.gender = gender
+        self.origin = origin
+        self.location = location
+        self.image = image
+        self.episode = episode
+        self.url = url
+        self.created = created
+    }
 }
 
 /**
@@ -225,9 +247,14 @@ public struct RMCharacterModel: Codable, Identifiable {
  - **name**: The name of the origin.
  - **url**: Link to the origin's own URL endpoint.
  */
-public struct RMCharacterOriginModel: Codable {
+public struct RMCharacterOriginModel: Codable, Hashable {
     public let name: String
     public let url: String
+
+    public init(name: String, url: String) {
+        self.name = name
+        self.url = url
+    }
 }
 
 /**
@@ -236,15 +263,20 @@ public struct RMCharacterOriginModel: Codable {
  - **name**: The name of the location.
  - **url**: Link to the location's own URL endpoint.
  */
-public struct RMCharacterLocationModel: Codable {
+public struct RMCharacterLocationModel: Codable, Hashable {
     public let name: String
     public let url: String
+
+    public init(name: String, url: String) {
+        self.name = name
+        self.url = url
+    }
 }
 
 /**
  Enum to filter by status
  */
-public enum Status: String {
+public enum Status: String, Equatable {
     case alive = "alive"
     case dead = "dead"
     case unknown = "unknown"
@@ -254,7 +286,7 @@ public enum Status: String {
 /**
  Enum to filter by gender
  */
-public enum Gender: String {
+public enum Gender: String, Equatable {
     case female = "female"
     case male = "male"
     case genderless = "genderless"
