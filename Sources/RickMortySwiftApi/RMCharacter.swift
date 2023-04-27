@@ -149,6 +149,15 @@ public struct RMCharacterFilter {
     public let type: String
     public let gender: String
     public let query: String
+ 
+    public init(name: String = "", status: String = "", species: String = "", type: String = "", gender: String = "", query: String = "") {
+        self.name = name
+        self.status = status
+        self.species = species
+        self.type = type
+        self.gender = gender
+        self.query = query
+    }
 }
 
 /**
