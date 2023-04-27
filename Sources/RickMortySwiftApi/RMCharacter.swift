@@ -143,20 +143,33 @@ public struct RMCharacter {
  - **query**: URL query for HTTP request.
  */
 public struct RMCharacterFilter {
-    public let name: String
-    public let status: String
-    public let species: String
-    public let type: String
-    public let gender: String
-    public let query: String
+    public var name: String
+    public var status: String
+    public var species: String
+    public var type: String
+    public var gender: String
  
-    public init(name: String = "", status: String = "", species: String = "", type: String = "", gender: String = "", query: String = "") {
+    public init(name: String = "", status: String = "", species: String = "", type: String = "", gender: String = "") {
         self.name = name
         self.status = status
         self.species = species
         self.type = type
         self.gender = gender
-        self.query = query
+    }
+
+    public var query: String {
+        let paramsDict = ["name": name,
+                          "status": status,
+                          "species": species,
+                          "type": type,
+                          "gender": gender]
+     
+         var query = "character/?"
+         paramsDict.forEach { key, value in
+             query.append(key + "=" + value + "&")
+         }
+     
+								 return query
     }
 }
 
